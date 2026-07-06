@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<title>Vibe IDE</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<style>
+  :root{
+    --bg:#0a0a0a;
+    --panel:#141414;
+    --card:#191919;
+    --card-hi:#1f1f1f;
+    --border:#2a2a2a;
+    --text:#e9e9e7;
+    --muted:#8b8b8b;
+    --muted-2:#666;
+    --accent:#ff7a52;
+    --accent-dim:#4a2e24;
+    --accent-user:#3d2a22;
+    --green:#5fd98a;
+    --green-bg:#16281d;
+    --mono:'SF Mono','JetBrains Mono',Consolas,monospace;
+    --sans:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;
+  }
+  *{box-sizing:border-box;}
+  html,body{margin:0;padding:0;height:100%;background:var(--bg);color:var(--text);font-family:var(--sans);-webkit-font-smoothing:antialiased;overflow:hidden;}
+  #app{position:relative;height:100vh;width:100vw;max-width:480px;margin:0 auto;background:var(--bg);display:flex;flex-direction:column;overflow:hidden;border-left:1px solid #000;border-right:1px solid #000;}
+
+  /* ---------- HOME ---------- */
+  .screen{position:absolute;inset:0;display:flex;flex-direction:column;background:var(--bg);transition:transform .28s ease;}
+  #home-screen{padding:18px 18px 12px;}
+  .app-title-row{display:flex;align-items:baseline;gap:8px;margin-bottom:2px;}
+  .app-title{font-size:26px;font-weight:800;letter-spacing:-0.02em;}
+  .badge{font-size:10px;font-weight:700;padding:3px 7px;border-radius:6px;background:#232323;color:var(--muted);border:1px solid var(--border);}
+  .badge.beta{background:var(--accent-dim);color:var(--accent);border-color:#5c3626;}
+  .app-sub{color:var(--muted);font-size:13.5px;margin:2px 0 20px;}
+  .section-label{font-size:11px;font-weight:700;letter-spacing:.08em;color:var(--muted-2);margin-bottom:10px;}
+  #plugin-list{overflow-y:auto;flex:1;padding-bottom:20px;}
+  .plugin-card{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:10px;cursor:pointer;transition:background .15s;}
+  .plugin-card:active{background:var(--card-hi);}
+  .avatar{width:42px;height:42px;border-radius:11px;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:16px;color:#111;flex-shrink:0;}
+  .plugin-meta{flex:1;min-width:0;}
+  .plugin-name-row{display:flex;align-items:center;gap:7px;}
+  .plugin-name{font-weight:650;font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .status-chip{font-size:10px;font-weight:700;padding:2px 7px;border-radius:6px;background:var(--green-bg);color:var(--green);white-space:nowrap;}
+  .plugin-time{color:var(--muted);font-size:12.5px;margin-top:2px;}
+  .plugin-actions{display:flex;align-items:center;gap:14px;flex-shrink:0;}
+  .btn-text{background:none;border:none;font-family:inherit;font-weight:700;font-size:13px;cursor:pointer;padding:6px 4px;}
+  .btn-deploy{color:var(--accent);}
+  .btn-delete{color:var(--muted);}
+  .new-plugin-btn{border:1.5px dashed var(--border);border-radius:14px;padding:16px;text-align:center;color:var(--muted);font-weight:600;font-size:14px;cursor:pointer;background:none;width:100%;font-family:inherit;}
+  .new-plugin-btn:active{background:var(--card);}
+  .footer-tag{position:absolute;bottom:10px;right:16px;color:#4a4a4a;font-size:11px;}
+
+  /* ---------- EDITOR ---------- */
+  #editor-screen{transform:translateX(100%);}
+  #editor-screen.active{transform:translateX(0);}
+  .editor-topbar{display:flex;align-items:center;gap:6px;padding:12px 10px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .icon-btn{width:34px;height:34px;border-radius:9px;border:none;background:none;color:var(--text);display:flex;align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;}
+  .icon-btn:active{background:var(--card);}
+  .icon-btn:disabled{opacity:.3;}
+  .ai-pill{display:flex;align-items:center;gap:5px;background:var(--accent-dim);color:var(--accent);border:none;border-radius:9px;padding:7px 10px;font-weight:700;font-size:12.5px;cursor:pointer;flex-shrink:0;}
+  .editor-title-wrap{flex:1;min-width:0;text-align:left;padding-left:2px;}
+  .editor-title{font-weight:700;font-size:14.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+  .editor-status{font-size:11.5px;color:var(--muted);}
+  .editor-status.busy{color:var(--accent);}
+
+  #code-area{flex:1;overflow:auto;background:var(--bg);}
+  #code-inner{display:flex;font-family:var(--mono);font-size:13px;line-height:1.65;min-height:100%;}
+  .line-numbers{padding:14px 10px 14px 16px;text-align:right;color:#3d3d3d;user-select:none;background:var(--bg);border-right:1px solid var(--border);flex-shrink:0;}
+  #code-content{padding:14px 16px;white-space:pre;flex:1;outline:none;}
+  .tok-kw{color:#e07be0;}
+  .tok-str{color:#9ece6a;}
+  .tok-com{color:#5a6270;font-style:italic;}
+  .tok-dunder{color:#7dd3fc;}
+  .tok-num{color:#f6a259;}
+  .tok-def{color:#7aa2f7;}
+  .tok-deco{color:#ffb86c;}
+
+  /* ---------- AI CHAT SHEET ---------- */
+  #chat-overlay{position:absolute;inset:0;background:rgba(0,0,0,.55);display:none;z-index:20;}
+  #chat-overlay.open{display:block;}
+  #chat-sheet{position:absolute;left:0;right:0;bottom:0;height:78%;background:var(--panel);border-radius:18px 18px 0 0;display:flex;flex-direction:column;transform:translateY(100%);transition:transform .3s cubic-bezier(.32,.72,0,1);border:1px solid var(--border);border-bottom:none;}
+  #chat-overlay.open #chat-sheet{transform:translateY(0);}
+  .chat-header{display:flex;align-items:center;padding:16px 16px 12px;border-bottom:1px solid var(--border);flex-shrink:0;}
+  .chat-header h3{margin:0;font-size:18px;font-weight:750;flex:1;}
+  .chat-header .icon-btn{color:var(--muted);}
+  #chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;}
+  .msg-user{align-self:flex-end;max-width:82%;background:var(--accent-user);color:#f3e4dd;border-radius:16px 16px 3px 16px;padding:11px 14px;font-size:14.5px;line-height:1.4;}
+  .msg-assistant{align-self:flex-start;max-width:90%;background:var(--card);border:1px solid var(--border);border-radius:16px 16px 16px 3px;padding:12px 14px;font-size:14.5px;line-height:1.45;}
+  .msg-assistant .code-block{margin-top:8px;background:#0e0e0e;border:1px solid var(--border);border-radius:10px;overflow:hidden;}
+  .code-block-head{display:flex;justify-content:space-between;align-items:center;padding:7px 11px;font-size:11px;color:var(--muted);border-bottom:1px solid var(--border);}
+  .code-block-head .lang{background:var(--accent-dim);color:var(--accent);padding:2px 7px;border-radius:5px;font-weight:700;}
+  .code-block pre{margin:0;padding:10px 12px;font-family:var(--mono);font-size:11.5px;color:#c7c7c7;max-height:160px;overflow:auto;white-space:pre-wrap;}
+  .thinking{align-self:flex-start;color:var(--muted);font-size:13.5px;display:flex;gap:5px;align-items:center;padding:4px 6px;}
+  .dot{width:5px;height:5px;border-radius:50%;background:var(--muted);animation:blink 1.2s infinite ease-in-out;}
+  .dot:nth-child(2){animation-delay:.2s;}
+  .dot:nth-child(3){animation-delay:.4s;}
+  @keyframes blink{0%,80%,100%{opacity:.25;}40%{opacity:1;}}
+
+  .chat-input-bar{display:flex;align-items:center;gap:8px;padding:12px 14px;border-top:1px solid var(--border);flex-shrink:0;}
+  #chat-input{flex:1;background:var(--card);border:1px solid var(--border);border-radius:22px;padding:11px 16px;color:var(--text);font-family:inherit;font-size:14px;outline:none;}
+  #chat-input::placeholder{color:var(--muted-2);}
+  #send-btn{background:var(--accent);color:#1a0e08;border:none;border-radius:20px;padding:11px 18px;font-weight:750;font-size:14px;cursor:pointer;flex-shrink:0;}
+  #send-btn:disabled{opacity:.5;}
+  .auto-approve-row{display:flex;align-items:center;justify-content:space-between;padding:10px 16px 14px;font-size:13.5px;color:var(--text);border-top:1px solid var(--border);flex-shrink:0;}
+  .switch{width:42px;height:25px;border-radius:14px;background:var(--accent);position:relative;cursor:pointer;flex-shrink:0;transition:background .2s;}
+  .switch.off{background:#333;}
+  .switch .knob{position:absolute;top:2.5px;left:20px;width:20px;height:20px;border-radius:50%;background:#000;transition:left .2s;}
+  .switch.off .knob{left:2.5px;background:#ccc;}
+
+  /* ---------- NEW PLUGIN MODAL ---------- */
+  #new-overlay{position:absolute;inset:0;background:rgba(0,0,0,.6);display:none;align-items:flex-end;z-index:30;}
+  #new-overlay.open{display:flex;}
+  #new-sheet{width:100%;background:var(--panel);border-radius:18px 18px 0 0;padding:20px;border:1px solid var(--border);}
+  #new-sheet h3{margin:0 0 16px;font-size:18px;}
+  #new-sheet label{display:block;font-size:12px;color:var(--muted);margin-bottom:6px;font-weight:600;}
+  #new-sheet input, #new-sheet textarea{width:100%;background:var(--card);border:1px solid var(--border);border-radius:10px;padding:11px 13px;color:var(--text);font-family:inherit;font-size:14.5px;margin-bottom:14px;outline:none;resize:none;}
+  #new-sheet textarea{min-height:70px;}
+  .modal-actions{display:flex;gap:10px;}
+  .btn-primary{flex:1;background:var(--accent);color:#1a0e08;border:none;border-radius:11px;padding:13px;font-weight:750;font-size:14.5px;cursor:pointer;}
+  .btn-secondary{flex:1;background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:11px;padding:13px;font-weight:650;font-size:14.5px;cursor:pointer;}
+
+  ::-webkit-scrollbar{width:0;height:0;}
+</style>
+</head>
+<body>
+<div id="app">
+
+  <!-- HOME SCREEN -->
+  <div id="home-screen" class="screen">
+    <div class="app-title-row">
+      <span class="app-title">Vibe IDE</span>
+      <span class="badge">v0.1.0</span>
+      <span class="badge beta">BETA</span>
+    </div>
+    <div class="app-sub">Пиши и вайб-кодь плагины для exteraGram.</div>
+    <div class="section-label">ТВОИ ПЛАГИНЫ</div>
+    <div id="plugin-list"></div>
+    <div class="footer-tag">clone · powered by Claude</div>
+  </div>
+
+  <!-- EDITOR SCREEN -->
+  <div id="editor-screen" class="screen">
+    <div class="editor-topbar">
+      <button class="icon-btn" id="back-btn">←</button>
+      <button class="icon-btn" id="undo-btn" title="Undo">↺</button>
+      <button class="icon-btn" id="redo-btn" title="Redo">↻</button>
+      <button class="ai-pill" id="ai-open-btn">✦ AI</button>
+      <button class="icon-btn" id="download-btn" title="Send .plugin">⬇</button>
+      <button class="icon-btn" id="copy-btn" title="Copy code">⧉</button>
+      <div class="editor-title-wrap">
+        <div class="editor-title" id="editor-title">test</div>
+        <div class="editor-status" id="editor-status">Saved</div>
+      </div>
+      <button class="icon-btn" id="editor-close-btn">✕</button>
+    </div>
+    <div id="code-area">
+      <div id="code-inner">
+        <div class="line-numbers" id="line-numbers"></div>
+        <pre id="code-content" spellcheck="false"></pre>
+      </div>
+    </div>
+
+    <!-- AI CHAT SHEET -->
+    <div id="chat-overlay">
+      <div id="chat-sheet">
+        <div class="chat-header">
+          <h3>AI chat</h3>
+          <button class="icon-btn" id="chat-clear">⟲</button>
+          <button class="icon-btn" id="chat-close">✕</button>
+        </div>
+        <div id="chat-messages"></div>
+        <div class="chat-input-bar">
+          <input id="chat-input" placeholder="Ask for a change…" autocomplete="off">
+          <button id="send-btn">Send</button>
+        </div>
+        <div class="auto-approve-row">
+          <span>Auto-approve changes</span>
+          <div class="switch" id="auto-approve-switch"><div class="knob"></div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NEW PLUGIN MODAL -->
+  <div id="new-overlay">
+    <div id="new-sheet">
+      <h3>Новый плагин</h3>
+      <label>Название (id)</label>
+      <input id="new-name" placeholder="например, weather_widget">
+      <label>Что должен делать плагин</label>
+      <textarea id="new-desc" placeholder="Опиши идею — AI сгенерирует первую версию кода"></textarea>
+      <div class="modal-actions">
+        <button class="btn-secondary" id="new-cancel">Отмена</button>
+        <button class="btn-primary" id="new-create">Создать</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+const AVATAR_COLORS = ['#c9a4f5','#7fe0cf','#8ec8f7','#a9e8a0','#f5b8a0','#f0d67f'];
+let plugins = [];
+let currentId = null;
+let autoApprove = true;
+
+const el = id => document.getElementById(id);
+
+async function loadPlugins(){
+  try{
+    const res = await window.storage.get('plugin-list', false);
+    plugins = res ? JSON.parse(res.value) : defaultPlugins();
+  }catch(e){
+    plugins = defaultPlugins();
+  }
+  renderHome();
+}
+async function savePlugins(){
+  try{ await window.storage.set('plugin-list', JSON.stringify(plugins), false); }catch(e){}
+}
+
+function defaultPlugins(){
+  return [{
+    id:'test', name:'test', status:'Installed',
+    editedAgo:'2h ago',
+    color: AVATAR_COLORS[0],
+    code: DEFAULT_TEMPLATE('test','test','Sends a random cat photo on .cat'),
+    history:[]
+  }];
+}
+
+function DEFAULT_TEMPLATE(id,name,desc){
+return `__id__ = "${id}"
+__name__ = "${name}"
+__description__ = "${desc}"
+__author__ = "@your_username"
+__version__ = "1.0.0"
+__min_version__ = "11.9.1"
+
+import os
+import time
+import requests
+
+from base_plugin import BasePlugin, HookResult, HookStrategy
+from android_utils import log
+from client_utils import run_on_queue, send_photo
+
+class Plugin(BasePlugin):
+    def on_plugin_load(self):
+        self.add_on_send_message_hook()
+
+    def on_plugin_unload(self):
+        pass
+
+    def on_send_message_hook(self, account, params):
+        message = getattr(params, "message", None)
+        if not isinstance(message, str):
+            return HookResult()
+
+        text = message.strip().lower()
+        if text != ".${id}":
+            return HookResult()
+
+        run_on_queue(lambda: self._send_random(account, params))
+        return HookResult(strategy=HookStrategy.CANCEL)
+
+    def _send_random(self, account, params):
+        try:
+            log("sending photo...")
+        except Exception as e:
+            log(f"error: {e}")
+`;
+}
+
+function renderHome(){
+  const list = el('plugin-list');
+  list.innerHTML = '';
+  plugins.forEach(p=>{
+    const card = document.createElement('div');
+    card.className='plugin-card';
+    card.innerHTML = `
+      <div class="avatar" style="background:${p.color}">${p.name[0].toUpperCase()}</div>
+      <div class="plugin-meta">
+        <div class="plugin-name-row">
+          <span class="plugin-name">${p.name}</span>
+          <span class="status-chip">${p.status}</span>
+        </div>
+        <div class="plugin-time">Edited ${p.editedAgo}</div>
+      </div>
+      <div class="plugin-actions">
+        <button class="btn-text btn-deploy" data-act="download" data-id="${p.id}">⬇ .plugin</button>
+        <button class="btn-text btn-delete" data-act="delete" data-id="${p.id}">Delete</button>
+      </div>`;
+    card.addEventListener('click', (ev)=>{
+      if(ev.target.dataset.act) return;
+      openEditor(p.id);
+    });
+    list.appendChild(card);
+  });
+  list.querySelectorAll('[data-act]').forEach(btn=>{
+    btn.addEventListener('click', (ev)=>{
+      ev.stopPropagation();
+      const id = btn.dataset.id;
+      if(btn.dataset.act==='delete'){
+        plugins = plugins.filter(p=>p.id!==id);
+        savePlugins(); renderHome();
+      } else if(btn.dataset.act==='download'){
+        downloadPlugin(plugins.find(p=>p.id===id));
+      }
+    });
+  });
+  const newBtn = document.createElement('button');
+  newBtn.className='new-plugin-btn';
+  newBtn.textContent='+ New plugin';
+  newBtn.addEventListener('click', ()=> el('new-overlay').classList.add('open'));
+  list.appendChild(newBtn);
+}
+
+function escapeHtml(s){
+  return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+function highlightPython(code){
+  let h = escapeHtml(code);
+  h = h.replace(/(#.*$)/gm,'<span class="tok-com">$1</span>');
+  h = h.replace(/("""[\s\S]*?"""|'''[\s\S]*?'''|"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*')/g,'<span class="tok-str">$1</span>');
+  h = h.replace(/\b(def|class|return|if|elif|else|for|while|import|from|as|try|except|finally|with|lambda|pass|self|not|in|is|and|or|None|True|False|raise|yield|global)\b/g,'<span class="tok-kw">$1</span>');
+  h = h.replace(/^(__\w+__)/gm,'<span class="tok-dunder">$1</span>');
+  h = h.replace(/(@\w+)/g,'<span class="tok-deco">$1</span>');
+  h = h.replace(/\b(\d+\.?\d*)\b/g,'<span class="tok-num">$1</span>');
+  return h;
+}
+
+function renderCode(code){
+  const lines = code.split('\n');
+  el('line-numbers').innerHTML = lines.map((_,i)=>i+1).join('<br>');
+  el('code-content').innerHTML = highlightPython(code);
+}
+
+function openEditor(id){
+  currentId = id;
+  const p = plugins.find(x=>x.id===id);
+  el('editor-title').textContent = p.name;
+  el('editor-status').textContent = 'Saved';
+  el('editor-status').classList.remove('busy');
+  renderCode(p.code);
+  renderChat(p);
+  el('editor-screen').classList.add('active');
+}
+function closeEditor(){
+  el('editor-screen').classList.remove('active');
+  el('chat-overlay').classList.remove('open');
+}
+
+function renderChat(p){
+  const box = el('chat-messages');
+  box.innerHTML='';
+  (p.history||[]).forEach(m=> box.appendChild(renderMessage(m)));
+  box.scrollTop = box.scrollHeight;
+}
+function renderMessage(m){
+  const div = document.createElement('div');
+  if(m.role==='user'){
+    div.className='msg-user';
+    div.textContent = m.text;
+  } else {
+    div.className='msg-assistant';
+    div.innerHTML = escapeHtml(m.text).replace(/\n/g,'<br>');
+    if(m.code){
+      const cb = document.createElement('div');
+      cb.className='code-block';
+      cb.innerHTML = `<div class="code-block-head"><span>${(currentPlugin()||{}).id||'plugin'}.plugin</span><span class="lang">PYTHON</span></div><pre>${escapeHtml(m.code.slice(0,900))}${m.code.length>900?'\n…':''}</pre>`;
+      div.appendChild(cb);
+    }
+  }
+  return div;
+}
+function currentPlugin(){ return plugins.find(p=>p.id===currentId); }
+
+// ====== Telegram Mini App integration ======
+// Set this to your deployed backend URL (see server.js). Leave empty to disable bot-send and
+// always fall back to share/download/copy (useful while testing outside Telegram).
+const BACKEND_URL = ""; // e.g. "https://your-app.onrender.com/api/send-plugin"
+
+const tg = window.Telegram && window.Telegram.WebApp;
+if(tg){
+  tg.ready();
+  tg.expand();
+}
+
+function downloadPlugin(p){
+  if(!p) return;
+  const filename = `${p.id}.plugin`;
+
+  // 0) Inside Telegram Mini App + backend configured -> send the file straight into the chat
+  if(tg && BACKEND_URL){
+    tg.MainButton && tg.MainButton.hide();
+    fetch(BACKEND_URL, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ initData: tg.initData, filename, code: p.code })
+    }).then(r=>r.json()).then(res=>{
+      if(res && res.ok){
+        tg.showAlert ? tg.showAlert(`Файл ${filename} отправлен тебе в чат ✅`) : alert(`Файл ${filename} отправлен в чат`);
+      } else {
+        throw new Error(res && res.error || 'send failed');
+      }
+    }).catch(()=>{
+      (tg.showAlert ? tg.showAlert.bind(tg) : alert)('Не получилось отправить файл через бота, скачиваю обычным способом…');
+      downloadFallback(p, filename);
+    });
+    return;
+  }
+
+  downloadFallback(p, filename);
+}
+
+function downloadFallback(p, filename){
+  const blob = new Blob([p.code], {type:'application/octet-stream'});
+
+  // 1) Native share sheet — most reliable inside in-app/webview browsers (Telegram, Claude app, etc.)
+  if(navigator.canShare && navigator.share){
+    try{
+      const file = new File([blob], filename, {type:'application/octet-stream'});
+      if(navigator.canShare({files:[file]})){
+        navigator.share({files:[file], title:filename}).catch(()=>{});
+        return;
+      }
+    }catch(e){ /* fall through */ }
+  }
+
+  // 2) Classic anchor download
+  try{
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(()=>URL.revokeObjectURL(url), 3000);
+  }catch(e){
+    // 3) Last resort — copy to clipboard so the user can paste into a .plugin file manually
+    copyPluginCode(p, true);
+  }
+}
+
+function copyPluginCode(p, isFallback){
+  if(!p) return;
+  if(navigator.clipboard && navigator.clipboard.writeText){
+    navigator.clipboard.writeText(p.code).then(()=>{
+      alert(isFallback
+        ? 'Скачать файл напрямую не удалось — код скопирован в буфер обмена, вставь его в файл ' + p.id + '.plugin'
+        : 'Код скопирован в буфер обмена');
+    }).catch(()=> legacyCopy(p.code));
+  } else {
+    legacyCopy(p.code);
+  }
+}
+function legacyCopy(text){
+  const ta = document.createElement('textarea');
+  ta.value = text; ta.style.position='fixed'; ta.style.opacity='0';
+  document.body.appendChild(ta); ta.focus(); ta.select();
+  try{ document.execCommand('copy'); alert('Код скопирован в буфер обмена'); }catch(e){}
+  ta.remove();
+}
+
+function extractCode(text){
+  const match = text.match(/```(?:python)?\s*([\s\S]*?)```/);
+  return match ? match[1].trim() : null;
+}
+
+async function callClaude(systemPrompt, userText){
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method:"POST",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({
+      model:"claude-sonnet-4-6",
+      max_tokens:2000,
+      system: systemPrompt,
+      messages:[{role:"user", content:userText}]
+    })
+  });
+  const data = await response.json();
+  const text = (data.content||[]).map(b=>b.type==='text'?b.text:'').join('\n');
+  return text;
+}
+
+async function handleSend(){
+  const input = el('chat-input');
+  const text = input.value.trim();
+  if(!text) return;
+  const p = currentPlugin();
+  input.value='';
+  p.history.push({role:'user', text});
+  renderChat(p);
+  savePlugins();
+
+  const box = el('chat-messages');
+  const thinking = document.createElement('div');
+  thinking.className='thinking';
+  thinking.innerHTML = 'Думаю<div class="dot"></div><div class="dot"></div><div class="dot"></div>';
+  box.appendChild(thinking);
+  box.scrollTop = box.scrollHeight;
+  el('editor-status').textContent='Generating…';
+  el('editor-status').classList.add('busy');
+  el('send-btn').disabled = true;
+
+  const system = `Ты — ассистент внутри "Vibe IDE", редактора плагинов для Telegram-клиента exteraGram (Python plugin API).
+Формат плагина: файл с мета-полями __id__, __name__, __description__, __author__, __version__, __min_version__,
+классом Plugin(BasePlugin) с методами on_plugin_load/on_plugin_unload, хуками вида add_on_send_message_hook,
+on_send_message_hook(self, account, params) -> HookResult, использованием run_on_queue, run_on_ui_thread,
+log из android_utils, send_photo/send_message из client_utils.
+Тебе дают текущий код плагина и просьбу пользователя. Дай короткий ответ (1-3 предложения) на русском о том, что ты изменил,
+а затем ОБЯЗАТЕЛЬНО приведи ПОЛНЫЙ обновлённый файл плагина целиком в блоке \`\`\`python ... \`\`\`.
+Не сокращай код, не используй "...". Код должен быть рабочим и самодостаточным.`;
+
+  const userMsg = `Текущий код плагина (id=${p.id}):\n\`\`\`python\n${p.code}\n\`\`\`\n\nЗапрос пользователя: ${text}`;
+
+  try{
+    const reply = await callClaude(system, userMsg);
+    thinking.remove();
+    const code = extractCode(reply);
+    const explanation = reply.replace(/```[\s\S]*?```/,'').trim() || 'Готово, обновил код.';
+    p.history.push({role:'assistant', text:explanation, code});
+    if(code && autoApprove){
+      p.code = code;
+      renderCode(p.code);
+      p.editedAgo = 'только что';
+    }
+    renderChat(p);
+    savePlugins();
+  }catch(err){
+    thinking.remove();
+    p.history.push({role:'assistant', text:'Не получилось выполнить запрос: '+err.message, code:null});
+    renderChat(p);
+  }finally{
+    el('editor-status').textContent='Saved';
+    el('editor-status').classList.remove('busy');
+    el('send-btn').disabled = false;
+  }
+}
+
+// --- events ---
+el('back-btn').addEventListener('click', closeEditor);
+el('editor-close-btn').addEventListener('click', closeEditor);
+el('ai-open-btn').addEventListener('click', ()=> el('chat-overlay').classList.add('open'));
+el('download-btn').addEventListener('click', ()=> downloadPlugin(currentPlugin()));
+el('copy-btn').addEventListener('click', ()=> copyPluginCode(currentPlugin(), false));
+el('chat-close').addEventListener('click', ()=> el('chat-overlay').classList.remove('open'));
+el('chat-clear').addEventListener('click', ()=>{
+  const p = currentPlugin(); p.history=[]; renderChat(p); savePlugins();
+});
+el('send-btn').addEventListener('click', handleSend);
+el('chat-input').addEventListener('keydown', e=>{ if(e.key==='Enter') handleSend(); });
+el('auto-approve-switch').addEventListener('click', ()=>{
+  autoApprove = !autoApprove;
+  el('auto-approve-switch').classList.toggle('off', !autoApprove);
+});
+
+el('new-cancel').addEventListener('click', ()=> el('new-overlay').classList.remove('open'));
+el('new-create').addEventListener('click', async ()=>{
+  const name = el('new-name').value.trim() || 'new_plugin';
+  const desc = el('new-desc').value.trim() || 'A new exteraGram plugin';
+  const id = name.toLowerCase().replace(/[^a-z0-9_]/g,'_');
+  const color = AVATAR_COLORS[plugins.length % AVATAR_COLORS.length];
+  const plugin = {id, name:id, status:'Draft', editedAgo:'только что', color, code:DEFAULT_TEMPLATE(id,id,desc), history:[]};
+  plugins.unshift(plugin);
+  el('new-name').value=''; el('new-desc').value='';
+  el('new-overlay').classList.remove('open');
+  await savePlugins();
+  renderHome();
+  openEditor(id);
+  // kick off an initial AI generation based on the description
+  el('chat-overlay').classList.add('open');
+  el('chat-input').value = desc;
+  handleSend();
+});
+
+loadPlugins();
+</script>
+</body>
+</html>
