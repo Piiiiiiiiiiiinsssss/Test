@@ -18,6 +18,17 @@ const cors = require("cors");
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
 const { EXAMPLES } = require("./examples.js");
+const db = require("./db.js");
+
+const ADMIN_TOKEN = process.env.ADMIN_TOKEN; // придумай длинную случайную строку сам, никому не показывай
+
+function requireAdmin(req, res, next) {
+  const token = req.headers["x-admin-token"];
+  if (!ADMIN_TOKEN || token !== ADMIN_TOKEN) {
+    return res.status(401).json({ ok: false, error: "unauthorized" });
+  }
+  next();
+}
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -59,7 +70,82 @@ function verifyInitData(initData, botToken) {
   return userJson ? JSON.parse(userJson) : null;
 }
 
-app.post("/api/send-plugin", async (req, res) => {
+// ================= Admin: управление ключами =================
+// Все /api/admin/* требуют заголовок  x-admin-token: <твой ADMIN_TOKEN>
+
+app.post("/api/admin/keys", requireAdmin, async (req, res) => {
+  try {
+    const { note, expiresInDays } = req.body || {};
+    const doc = await db.createKey({ note, expiresInDays });
+    res.json({ ok: true, key: doc });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
+app.get("/api/admin/keys", requireAdmin, async (req, res) => {
+  try {
+    const keys = await db.listKeys();
+    res.json({ ok: true, keys });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
+app.patch("/api/admin/keys/:key", requireAdmin, async (req, res) => {
+  try {
+    const updated = await db.updateKey(req.params.key, req.body || {});
+    if (!updated) return res.status(404).json({ ok: false, error: "key not found" });
+    res.json({ ok: true, key: updated });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
+app.delete("/api/admin/keys/:key", requireAdmin, async (req, res) => {
+  try {
+    const deleted = await db.deleteKey(req.params.key);
+    res.json({ ok: deleted });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
+// ================= Клиент: активация ключа =================
+
+app.post("/api/activate", async (req, res) => {
+  try {
+    const { initData, key } = req.body || {};
+    const user = verifyInitData(initData, BOT_TOKEN);
+    if (!user) return res.status(401).json({ ok: false, error: "invalid initData" });
+    if (!key) return res.status(400).json({ ok: false, error: "missing key" });
+
+    const result = await db.activateKey(key.trim(), user.id);
+    res.json(result);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
+// Мидлварь для платных функций: пропускает только тех, у кого есть активный ключ
+async function requireLicense(req, res, next) {
+  try {
+    const user = verifyInitData(req.body.initData, BOT_TOKEN);
+    if (!user) return res.status(401).json({ ok: false, error: "invalid initData" });
+    const licensed = await db.hasActiveLicense(user.id);
+    if (!licensed) return res.status(402).json({ ok: false, error: "no active license" });
+    next();
+  } catch (err) {
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+}
+
+app.post("/api/send-plugin", requireLicense, async (req, res) => {
   try {
     const { initData, filename, code } = req.body || {};
     if (!initData || !filename || !code) {
@@ -125,7 +211,7 @@ log из android_utils, send_photo/send_message из client_utils.
 а затем ОБЯЗАТЕЛЬНО приведи ПОЛНЫЙ обновлённый файл плагина целиком в блоке \`\`\`python ... \`\`\`.
 Не сокращай код, не используй "...". Код должен быть рабочим и самодостаточным.`;
 
-app.post("/api/ai-chat", async (req, res) => {
+app.post("/api/ai-chat", requireLicense, async (req, res) => {
   try {
     const { initData, pluginCode, message } = req.body || {};
     if (!message || typeof pluginCode !== "string") {
@@ -184,4 +270,6 @@ app.post("/api/ai-chat", async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Vibe IDE backend listening on :${PORT}`));
+db.initDb().then(() => {
+  app.listen(PORT, () => console.log(`Vibe IDE backend listening on :${PORT}`));
+});
