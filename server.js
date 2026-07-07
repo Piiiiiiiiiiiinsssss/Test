@@ -17,6 +17,7 @@ const express = require("express");
 const cors = require("cors");
 const crypto = require("crypto");
 const TelegramBot = require("node-telegram-bot-api");
+const { EXAMPLES } = require("./examples.js");
 
 const BOT_TOKEN = process.env.BOT_TOKEN;
 const GROQ_API_KEY = process.env.GROQ_API_KEY;
@@ -88,6 +89,33 @@ app.post("/api/send-plugin", async (req, res) => {
   }
 });
 
+// --- Простой подбор релевантных few-shot примеров под конкретный запрос ---
+// Считает пересечение слов между (сообщением пользователя + текущим кодом)
+// и описанием каждого примера. Без эмбеддингов и внешних API — быстро и бесплатно.
+function pickRelevantExamples(message, pluginCode, maxExamples = 2, maxChars = 6000) {
+  const haystack = (message + " " + pluginCode).toLowerCase();
+  const words = new Set(haystack.match(/[a-zа-я0-9_]+/g) || []);
+
+  const scored = EXAMPLES.map((ex) => {
+    const exWords = (ex.description + " " + ex.name).toLowerCase().match(/[a-zа-я0-9_]+/g) || [];
+    const score = exWords.reduce((acc, w) => acc + (words.has(w) ? 1 : 0), 0);
+    return { ex, score };
+  }).sort((a, b) => b.score - a.score);
+
+  const picked = [];
+  let chars = 0;
+  for (const { ex, score } of scored) {
+    if (picked.length >= maxExamples) break;
+    if (score === 0 && picked.length > 0) break; // не берём совсем нерелевантные, если уже есть хоть один
+    if (chars + ex.code.length > maxChars) continue;
+    picked.push(ex);
+    chars += ex.code.length;
+  }
+  // если вообще ничего не совпало — всё равно даём первый пример как общий образец структуры
+  if (picked.length === 0 && EXAMPLES.length > 0) picked.push(EXAMPLES[0]);
+  return picked;
+}
+
 const SYSTEM_PROMPT = `Ты — ассистент внутри "Vibe IDE", редактора плагинов для Telegram-клиента exteraGram (Python plugin API).
 Формат плагина: файл с мета-полями __id__, __name__, __description__, __author__, __version__, __min_version__,
 классом Plugin(BasePlugin) с методами on_plugin_load/on_plugin_unload, хуками вида add_on_send_message_hook,
@@ -115,6 +143,11 @@ app.post("/api/ai-chat", async (req, res) => {
       return res.status(500).json({ ok: false, error: "GROQ_API_KEY not configured on server" });
     }
 
+    const examples = pickRelevantExamples(message, pluginCode);
+    const examplesBlock = examples
+      .map((ex, i) => `Пример рабочего плагина #${i + 1} (${ex.description}):\n\`\`\`python\n${ex.code}\n\`\`\``)
+      .join("\n\n");
+
     const groqRes = await fetch("https://api.groq.com/openai/v1/chat/completions", {
       method: "POST",
       headers: {
@@ -125,6 +158,7 @@ app.post("/api/ai-chat", async (req, res) => {
         model: "llama-3.3-70b-versatile",
         messages: [
           { role: "system", content: SYSTEM_PROMPT },
+          { role: "user", content: `Вот примеры реальных рабочих плагинов, ориентируйся на их структуру и точные названия методов/классов API:\n\n${examplesBlock}` },
           {
             role: "user",
             content: `Текущий код плагина:\n\`\`\`python\n${pluginCode}\n\`\`\`\n\nЗапрос пользователя: ${message}`,
