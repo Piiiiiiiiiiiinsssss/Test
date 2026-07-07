@@ -145,6 +145,39 @@ async function requireLicense(req, res, next) {
   }
 }
 
+// ================= Хранение плагинов пользователя =================
+// Не требует лицензии (можно смотреть/редактировать локально бесплатно),
+// но требует валидный initData - плагины привязаны к Telegram-аккаунту.
+
+app.post("/api/plugins/load", async (req, res) => {
+  try {
+    const user = verifyInitData(req.body.initData, BOT_TOKEN);
+    if (!user) return res.status(401).json({ ok: false, error: "invalid initData" });
+    const plugins = await db.getUserPlugins(user.id);
+    res.json({ ok: true, plugins }); // null, если у юзера ещё ничего не сохранено
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
+app.post("/api/plugins/save", async (req, res) => {
+  try {
+    const { plugins } = req.body || {};
+    const user = verifyInitData(req.body.initData, BOT_TOKEN);
+    if (!user) return res.status(401).json({ ok: false, error: "invalid initData" });
+    if (!Array.isArray(plugins)) return res.status(400).json({ ok: false, error: "plugins must be an array" });
+    if (JSON.stringify(plugins).length > 2_000_000) {
+      return res.status(413).json({ ok: false, error: "too much data" });
+    }
+    await db.saveUserPlugins(user.id, plugins);
+    res.json({ ok: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ ok: false, error: "server error" });
+  }
+});
+
 app.post("/api/send-plugin", requireLicense, async (req, res) => {
   try {
     const { initData, filename, code } = req.body || {};

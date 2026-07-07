@@ -30,6 +30,7 @@ async function initDb() {
   keysCollection = db.collection("keys");
   await keysCollection.createIndex({ key: 1 }, { unique: true });
   await keysCollection.createIndex({ telegramUserId: 1 });
+  await db.collection("user_plugins").createIndex({ telegramUserId: 1 }, { unique: true });
   console.log("MongoDB connected");
 }
 
@@ -107,6 +108,24 @@ async function hasActiveLicense(telegramUserId) {
   return true;
 }
 
+// --- Хранение плагинов пользователя (замена window.storage на постоянное хранилище) ---
+
+async function getUserPlugins(telegramUserId) {
+  const doc = await client.db("vibe_ide").collection("user_plugins").findOne({ telegramUserId });
+  return doc ? doc.plugins : null; // null = ничего не сохранено, фронт покажет дефолтный плагин
+}
+
+async function saveUserPlugins(telegramUserId, plugins) {
+  await client
+    .db("vibe_ide")
+    .collection("user_plugins")
+    .updateOne(
+      { telegramUserId },
+      { $set: { plugins, updatedAt: new Date() } },
+      { upsert: true }
+    );
+}
+
 module.exports = {
   initDb,
   createKey,
@@ -115,4 +134,6 @@ module.exports = {
   updateKey,
   activateKey,
   hasActiveLicense,
+  getUserPlugins,
+  saveUserPlugins,
 };
